@@ -1,0 +1,17 @@
+<meta>
+    <info name="RcMode" description="Offers scripters exported functions to have players remote control any vehicle" author="Mini-Me" type="script" version="1.0.0" />
+
+    <script src="remotecontrol.lua" type="server" />
+    <script src="client.lua" type="client" protected="true" />
+
+    <export function="enterRcMode" type="server" http="false" retval="void" params="player thePlayer, vehicle RcVehicle" description="Puts the player in RC Mode in the vehicle." />
+    <export function="isPlayerInRcMode" type="server" http="false" retval="bool" params="player thePlayer" description="Returns if the player is in RC Mode." />
+    <export function="exitRcMode" type="server" http="false" retval="void" params="player thePlayer" description="Ends RC Mode for the player." />
+    <export function="isCameraOnRcDummy" type="server" http="false" retval="bool" params="player thePlayer" description="Returns true if the camera is on the dummy of the player, returns false if it is on the player itself." />
+    <export function="setCameraOnRcDummy" type="server" http="false" retval="void" params="player thePlayer, bool OnDummy" description="Sets the camera on the dummy if onDummy is true, otherwise sets it on the player." />
+    <export function="getPlayerRcDummy" type="server" http="false" retval="ped" params="player thePlayer" description="Returns the ped that is used as RC dummy for the player." />
+
+    <settings>
+        <setting name="*RcMode.preventRcPlayerFromGettingJacked" value="[false]" />
+     </settings>
+</meta>
