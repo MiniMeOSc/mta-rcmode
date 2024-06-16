@@ -1,7 +1,7 @@
 <meta>
     <info name="RcMode" description="Offers scripters exported functions to have players remote control any vehicle" author="Mini-Me" type="script" version="1.0.0" />
 
-    <script src="remotecontrol.lua" type="server" />
+    <script src="server.lua" type="server" />
     <script src="client.lua" type="client" protected="true" />
 
     <export function="enterRcMode" type="server" http="false" retval="void" params="player thePlayer, vehicle RcVehicle" description="Puts the player in RC Mode in the vehicle." />
