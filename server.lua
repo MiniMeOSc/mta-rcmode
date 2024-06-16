@@ -1,21 +1,24 @@
---[[
 ------------------------------
 --	Script wide used variables
 ------------------------------
-]]
-local rcDummy = {}
-local isRcCameraOnPlayer = {}
 
---[[
+-- When the player enters RC mode, we make them invisible and seat them in the car.
+-- In their position, we spawn a ped with their skin that will keep facing the car
+-- as if they were looking at it while remotely driving it.
+-- This global variable is a list that stores the ped for each player.
+local g_rcDummy = {}
+
+-- The player can switch the camera between the car they're remote controlling 
+-- or the dummy ped representing them.
+-- This global variable is a list that stores the selection for each player.
+local g_isRcCameraOnPlayer = {}
+
 ------------------------------
 --	Exported functions
 ------------------------------
-]]
 
---[[
 -- void enterRcMode(player, vehicle)
 -- Puts the player in RC Mode in the vehicle.
-]]
 function enterRcMode(player, rcVehicle)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
@@ -27,6 +30,7 @@ function enterRcMode(player, rcVehicle)
 								if (getPedOccupiedVehicleSeat(player) == 0 and rcVehicle ~= getPedOccupiedVehicle(player)) or (getPedOccupiedVehicleSeat(player) ~= 0) then
 									if (getElementInterior(player) == getElementInterior(rcVehicle)) then
 										if(getElementDimension(player) == getElementDimension(rcVehicle)) then
+											-- remember all the information on the player
 											local posX, posY, posZ = getElementPosition(player)
 											local rotX, rotY, rotZ = getElementRotation(player)
 											local playerCar = getPedOccupiedVehicle(player)
@@ -35,7 +39,8 @@ function enterRcMode(player, rcVehicle)
 											local playerModel = getElementModel(player)
 											local health = getElementHealth(player)
 											local armor = getPedArmor(player)
-											setPlayerNametagShowing(player, false)
+											
+											-- remember their map blip's color and remove it
 											local r, g, b, a
 											local elements = getAttachedElements(player)
 											if elements then
@@ -46,6 +51,12 @@ function enterRcMode(player, rcVehicle)
 													end
 												end
 											end
+
+											-- hide the player's name tag so it isn't obvious they're sitting in the car
+											setPlayerNametagShowing(player, false)
+
+											-- if someone else is remote controlling the car, end their remote control session or 
+											-- if someone else is in the driver seat, put them in the passenger seat
 											local driver = getVehicleOccupant(rcVehicle, 0)
 											local passenger = getVehicleOccupant(rcVehicle, 1)
 											if driver and not passenger then
@@ -55,25 +66,39 @@ function enterRcMode(player, rcVehicle)
 													warpPedIntoVehicle(driver, rcVehicle, 1)
 												end
 											end
+
+											-- hide the player and put them in the driver seat
 											setElementAlpha(player, 0)
 											giveWeapon(player, 0, 0, true)
-											rcDummy[player] = createPed(playerModel, posX, posY, posZ)
-											setElementRotation(rcDummy[player], rotX, rotY, rotZ)
-											setElementDimension(rcDummy[player], dimension)
-											setElementHealth(rcDummy[player], health)
-											setPedArmor(rcDummy[player], armor)
-											giveWeapon(rcDummy[player], 40, 0, true)
-											observeRcDummy(rcDummy[player], player)
+
+											-- create a dummy ped and apply the player's information
+											local rcDummy = createPed(playerModel, posX, posY, posZ)
+											g_rcDummy[player] = rcDummy
+											setElementRotation(rcDummy, rotX, rotY, rotZ)
+											setElementDimension(rcDummy, dimension)
+											setElementHealth(rcDummy, health)
+											setPedArmor(rcDummy, armor)
+											giveWeapon(rcDummy, 40, 0, true)
 											if r and g and b and a then
-												createBlipAttachedTo(rcDummy[player], 0, 2, r, g, b, a)
+												createBlipAttachedTo(rcDummy, 0, 2, r, g, b, a)
 											end
+
+											-- if the player that enters rc mode is sitting in the passenger seat of another car, 
+											-- put their dummy in that seat
 											if isElement(playerCar) then
 												removePedFromVehicle(player)
-												warpPedIntoVehicle(rcDummy[player], playerCar, seat)
+												warpPedIntoVehicle(rcDummy, playerCar, seat)
 											end
+											
+											-- put the invisible player into the vehicle
 											warpPedIntoVehicle(player, rcVehicle, 0)
-											isRcCameraOnPlayer[player] = true
-											setElementData(player, "rcDummy", rcDummy[player])
+
+											-- start a timer that'll update the palyer's health when their dummy gets hurt
+											observeRcDummy(rcDummy, player)
+											g_isRcCameraOnPlayer[player] = true
+
+											-- store a reference to the rcDummy on the player so that the client can use it to render a nametag on it
+											setElementData(player, "rcDummy", rcDummy)
 										else
 											outputDebugString(string.format("RC Mode: enterRcMode: Player %s and vehicle are not in the same dimension.", getPlayerName(player)), 2)
 										end
@@ -106,14 +131,12 @@ function enterRcMode(player, rcVehicle)
 	end
 end
 
---[[
 -- bool isPlayerInRcMode(player)
 -- Returns if the player is in RC Mode.
-]]
 function isPlayerInRcMode(player)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
-			if isElement(rcDummy[player]) then
+			if isElement(g_rcDummy[player]) then
 				return true
 			end
 			return false
@@ -125,23 +148,31 @@ function isPlayerInRcMode(player)
 	end
 end
 
---[[
 -- void exitRcMode(player)
--- Ends RC Mode for the player.
-]]
+-- Ends RC mode for the player:
+--   * make the player visible again
+--   * remove them from the car and put them in the position of their dummy
+--   * destroy their dummy
+--   * remove the map blip from the dummy ped
+--   * add a blip for the player back
 function exitRcMode(player)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
 			if isPlayerInRcMode(player) then
-				local posX, posY, posZ = getElementPosition(getPlayerRcDummy(player))
-				local rotX, rotY, rotZ = getElementRotation(getPlayerRcDummy(player))
-				local playerCar = getPedOccupiedVehicle(getPlayerRcDummy(player))
-				local seat = getPedOccupiedVehicleSeat(getPlayerRcDummy(player))
-				local dimension = getElementDimension(getPlayerRcDummy(player))
-				local health = getElementHealth(getPlayerRcDummy(player))
-				local armor = getPedArmor(player)
+				local rcDummy = getPlayerRcDummy(player)
+
+				-- remember all information on the dummy ped
+				local posX, posY, posZ = getElementPosition(rcDummy)
+				local rotX, rotY, rotZ = getElementRotation(rcDummy)
+				local playerCar = getPedOccupiedVehicle(rcDummy)
+				local seat = getPedOccupiedVehicleSeat(rcDummy)
+				local dimension = getElementDimension(rcDummy)
+				local health = getElementHealth(rcDummy)
+				local armor = getPedArmor(rcDummy)
+
+				-- remember their map blip's color and remove it
 				local r, g, b, a
-				local elements = getAttachedElements(getPlayerRcDummy(player))
+				local elements = getAttachedElements(rcDummy)
 				if elements then
 					for k,v in ipairs(elements) do
 						if (getElementType(v) == "blip") then
@@ -150,11 +181,16 @@ function exitRcMode(player)
 						end
 					end
 				end
-				destroyElement(getPlayerRcDummy(player))
-				rcDummy[player] = nil
+				
+				-- remove the dummy ped
+				destroyElement(rcDummy)
+
+				-- apply the information to the player
 				removePedFromVehicle(player)
 				if isElement(playerCar) then
-					setCameraTarget(player, player) -- to fix an MTA bug: It appears that the camera is not set back on the player when he's put in a passenger seat
+					-- manually set the camera target to fix an MTA bug: 
+					-- It appears that the camera is not set back on the player when they're put in a passenger seat
+					setCameraTarget(player, player)
 					warpPedIntoVehicle(player, playerCar, seat)
 				end
 				getElementRotation(player, rotX, rotY, rotZ)
@@ -167,7 +203,10 @@ function exitRcMode(player)
 				if r and g and b and a then
 					createBlipAttachedTo(player, 0, 2, r, g, b, a)
 				end
-				isRcCameraOnPlayer[player] = nil
+
+				-- remove data stored on the dummy ped from global arrays
+				g_rcDummy[player] = nil
+				g_isRcCameraOnPlayer[player] = nil
 				setElementData(player, "rcDummy", nil)
 			else
 				outputDebugString(string.format("RC Mode: exitRcMode: Player %s is not in RC Mode.", getPlayerName(player)), 2)
@@ -180,14 +219,12 @@ function exitRcMode(player)
 	end
 end
 
---[[
 -- bool isCameraOnRcDummy(player)
 -- Returns true if the camera is on the dummy of the player, returns false if it is on the player itself.
-]]
 function isCameraOnRcDummy(player)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
-			return isRcCameraOnPlayer[player]
+			return g_isRcCameraOnPlayer[player]
 		else
 			outputDebugString(string.format("RC Mode: isCameraOnRcDummy expects parameter 1 to be a player, %s given.", getElementType(player)), 2)
 		end
@@ -196,22 +233,21 @@ function isCameraOnRcDummy(player)
 	end
 end
 
---[[
 -- void setCameraOnRcDummy(player, bool)
 -- Sets the camera on the dummy if onDummy is true, otherwise sets it on the player.
-]]
 function setCameraOnRcDummy(player, onDummy)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
 			if isPlayerInRcMode(player) then
 				if (onDummy == true) then
-					setCameraTarget(player, getPlayerRcDummy(player))
-					isRcCameraOnPlayer[player] = true
-					outputDebugString("isRcCameraOnPlayer["..getPlayerName(player).."] = true")
+					local rcDummy = getPlayerRcDummy(player)
+					setCameraTarget(player, rcDummy)
+					g_isRcCameraOnPlayer[player] = true
+					outputDebugString("g_isRcCameraOnPlayer["..getPlayerName(player).."] = true")
 				elseif (onDummy == false) then
 					setCameraTarget(player, player)
-					isRcCameraOnPlayer[player] = false
-					outputDebugString("isRcCameraOnPlayer["..getPlayerName(player).."] = false")
+					g_isRcCameraOnPlayer[player] = false
+					outputDebugString("g_isRcCameraOnPlayer["..getPlayerName(player).."] = false")
 				else
 					outputDebugString(string.format("RC Mode: setCameraOnRcDummy expects parameter 2 to be a boolean, %s given.", type(onDummy)), 2)
 				end
@@ -226,15 +262,13 @@ function setCameraOnRcDummy(player, onDummy)
 	end
 end
 
---[[
 -- ped getPlayerRcDummy(player)
 -- Returns the ped that is used as RC dummy for the player.
-]]
 function getPlayerRcDummy(player)
 	if isElement(player) then
 		if (getElementType(player) == "player") then
 			if isPlayerInRcMode(player) then
-				return rcDummy[player]
+				return g_rcDummy[player]
 			else
 				outputDebugString(string.format("RC Mode: Player %s is not in RC Mode.", getPlayerName(player)), 2)
 			end
@@ -246,22 +280,23 @@ function getPlayerRcDummy(player)
 	end
 end
 
---[[
 ------------------------------
 --	Internal functions
 ------------------------------
-]]
 
-function observeRcDummy(theRcDummy, assignedPlayer)
-	if isElement(theRcDummy) and isElement(assignedPlayer) then
-		-- outputDebugString("dummyHealth = "..getElementHealth(theRcDummy))
+-- Update the health of a player if their dummy gets hurt.
+function observeRcDummy(rcDummy, assignedPlayer)
+	if isElement(rcDummy) and isElement(assignedPlayer) then
+		-- outputDebugString("dummyHealth = "..getElementHealth(rcDummy))
 		-- outputDebugString("playerHealth = "..getElementHealth(assignedPlayer))
-		setElementHealth(assignedPlayer, getElementHealth(theRcDummy))
-		setPedArmor(assignedPlayer, getPedArmor(theRcDummy))
-		setTimer(observeRcDummy, 1000, 1, theRcDummy, assignedPlayer)
+		setElementHealth(assignedPlayer, getElementHealth(rcDummy))
+		setPedArmor(assignedPlayer, getPedArmor(rcDummy))
+		setTimer(observeRcDummy, 1000, 1, rcDummy, assignedPlayer)
 	end
 end
 
+-- If the player is being made to leave the car (i.e. from a different resource) while remote controlling a car
+-- abort this, as they're not really driving the car
 function abortExitingVehicle(player)
 	if isPlayerInRcMode(player) and not wasEventCancelled() then
 		exitRcMode(player)
@@ -270,6 +305,8 @@ function abortExitingVehicle(player)
 end
 addEventHandler("onVehicleStartExit", getRootElement(), abortExitingVehicle)
 
+-- If the setting to allow stealing a car from someone that's currently remote controlling it is enabled
+-- and another player attempts to get into a car that's being remote controlled stop the remote control session.
 function checkIfToAbortRcMode(enteringPlayer, seat, jacked)
 	if isElement(jacked) then
 		if isPlayerInRcMode(jacked) and not get("*RcMode.preventRcPlayerFromGettingJacked") then
@@ -279,7 +316,8 @@ function checkIfToAbortRcMode(enteringPlayer, seat, jacked)
 end
 addEventHandler("onVehicleStartEnter", getRootElement(), checkIfToAbortRcMode)
 
-function preventRcPlayerFromDieng()
+-- If the invisible player driving the car has been killed, respawn them where their dummy ped is.
+function preventRcPlayerFromDieing()
 	if isPlayerInRcMode(source) then
 		local posX, posY, posZ = getElementPosition(getPlayerRcDummy(source))
 		spawnPlayer(source, posX, posY, posZ)
@@ -287,8 +325,9 @@ function preventRcPlayerFromDieng()
 		exitRcMode(source)
 	end
 end
-addEventHandler("onPlayerWasted", getRootElement(), preventRcPlayerFromDieng)
+addEventHandler("onPlayerWasted", getRootElement(), preventRcPlayerFromDieing)
 
+-- When the player quits the game, only destroy their dummy (don't try to put them in the position of the dummy).
 function onlyDestroyRcDummy()
 	if isPlayerInRcMode(source) then
 		local elements = getAttachedElements(getPlayerRcDummy(source))
