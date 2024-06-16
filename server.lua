@@ -231,7 +231,7 @@ function exitRcMode(player)
 		setCameraTarget(player, player)
 		warpPedIntoVehicle(player, playerCar, seat)
 	end
-	getElementRotation(player, rotX, rotY, rotZ)
+	setElementRotation(player, rotX, rotY, rotZ)
 	setElementPosition(player, posX, posY, posZ)
 	setElementDimension(player, dimension)
 	setElementHealth(player, health)
