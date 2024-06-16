@@ -6,7 +6,7 @@ function showDummyName()
 		if players[i] then
 			-- get the dummy ped associated to this player
 			local rcDummy = getElementData(players[i], "rcDummy")
-			if isElement(rcDummy) then
+			if not isElement(rcDummy) then
 				-- get the dummy ped's position and check if the player can currently see it
 				local worldX, worldY, worldZ = getElementPosition(rcDummy)
 				local posX, posY, posZ = getElementPosition(getLocalPlayer())
