@@ -310,7 +310,7 @@ end
 -- Returns the ped that is used as RC dummy for the player.
 function getPlayerRcDummy(player)
 	-- is arg1 an mta element?
-	if isElement(player) then
+	if not isElement(player) then
 		outputDebugString(string.format("RC Mode: getPlayerRcDummy expects parameter 1 to be a player, %s given.", type(player)), 2)
 		return
 	end 
